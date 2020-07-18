@@ -1,0 +1,373 @@
+{% extends "mail/layout.html" %}
+{% load static %}
+
+{% block body %}
+    <style>
+        .Read {
+            display: flex;
+            background-color: gray;
+            margin: 10px;
+            padding: 5px;
+            padding-bottom: 5px;
+            border:5px solid lightblue;
+        }
+
+        .Mail {
+            display: flex;
+            background-color: white;
+            margin: 10px;
+            padding: 5px;
+            padding-bottom: 5px;
+            border:5px solid lightblue;
+        }
+
+        .Mail > .MailSubject, .Read > .MailSubject {
+            width:800px;
+            height: 30px;
+        }
+
+        .dateTime {
+            align-content: right;
+            margin-left: 0px;
+            width: 175px;
+        }
+
+        .emailView{
+            display: flex;
+            margin: 0px;
+            padding:0px;
+            border: 0px;
+            outline: 0px;
+        }
+
+        .form-group > p {
+            margin-bottom: 0px;
+        }
+
+        .button-set {
+            display: flex;
+        }
+
+    </style>
+    <h2>{{ request.user.email }}</h2>
+
+    <button class="btn btn-sm btn-outline-primary" id="inbox">Inbox</button>
+    <button class="btn btn-sm btn-outline-primary" id="compose">Compose</button>
+    <button class="btn btn-sm btn-outline-primary" id="sent">Sent</button>
+    <button class="btn btn-sm btn-outline-primary" id="archived">Archived</button>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'logout' %}">Log Out</a>
+    <hr>
+
+    <div id="emails-view">
+    </div>
+
+    <div id="display-view">
+        <div id="display-form">
+            <div id="Email_ID" hidden></div>
+            <table>
+                <tbody>
+                    <tr >
+                        <div class="form-group emailView">
+                            <b>From:</b> <p id="fromField"></p>
+                        </div>
+                    </tr>
+                    <tr >
+                        <div class="form-group emailView">
+                            <b>To:</b> <p id="ToField"></p>
+                        </div>
+                    </tr>
+                    <tr >
+                        <div class="form-group emailView">
+                            <b>Subject:</b> <p id="SubjectField"></p>
+                        </div>
+                    </tr>
+                    <tr >
+                        <div class="form-group emailView">
+                            <b>Timestamp:</b> <p id="TimestampField"></p>
+                        </div>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="button-set">
+                <button type="submit" class="btn btn-outline-primary" id="reply">Reply</button>
+                <button type="submit" class="btn btn-outline-primary" id="archiveBtn">Archive</button>
+                <button type="submit" class="btn btn-outline-primary" id="unarchiveBtn">Unarchive</button>
+            </div>
+            <hr>
+            <p id="emailBodyField"></p>  
+        </div>
+    </div>
+
+    <div id="compose-view">
+        <h3>New Email</h3>
+        <form id="compose-form">
+            <div class="form-group">
+                From: <input disabled class="form-control" id="CurrentAcct" value="{{ request.user.email }}">
+            </div>
+            <div class="form-group">
+                To: <input id="compose-recipients" class="form-control">
+            </div>
+            <div class="form-group">
+                <input class="form-control" id="compose-subject" placeholder="Subject">
+            </div>
+            <textarea class="form-control" id="compose-body" placeholder="Body"></textarea>
+            <input type="submit" class="btn btn-primary" id="sendMail"/>
+        </form>
+    </div>
+
+    <script type="text/javascript" src="{% static 'mail/inbox.js' %}"></script>
+    <script type="text/jquery" src="{% static 'mail/jquery-3.5.1.js' %}"></script>
+    <script>
+
+        document.addEventListener('DOMContentLoaded', ()=> { 
+                                                                document.querySelector('#sent').addEventListener('click', () => { showEmailBox(); GetSentMail(); });
+                                                                document.querySelector('#inbox').addEventListener('click', () => { showEmailBox(); GetInboxMail(); });
+                                                                document.querySelector('#archived').addEventListener('click', () => {showEmailBox(); GetarchivedMail();});
+                                                                document.querySelector('#archiveBtn').addEventListener('click', () => { 
+                                                                                                                                        var Email_ID = document.getElementById("Email_ID").innerHTML; 
+                                                                                                                                        MarkEmailAsArchived(Email_ID);
+                                                                                                                                      });
+                                                                document.querySelector('#unarchiveBtn').addEventListener('click', () => { 
+                                                                                                                                        var Email_ID = document.getElementById("Email_ID").innerHTML; 
+                                                                                                                                        MarkEmailAsUnarchived(Email_ID);
+                                                                                                                                      });
+                                                                document.querySelector('#reply').addEventListener('click', () => { 
+                                                                                                                                    HideViewEmail();
+                                                                                                                                    reply_email();
+                                                                                                                                    getAndFillReplyEmail()
+                                                                                                                                    // TODO
+                                                                                                                                });
+                                                                HideViewEmail();
+                                                                GetInboxMail();
+                                                            });
+        
+        function getAndFillReplyEmail(){
+            
+            // Grab existing Email Values
+            var ToField = document.getElementById('fromField').innerHTML;
+            var SubjectField = document.getElementById('SubjectField').innerHTML;
+            var BodyField = document.getElementById('emailBodyField').innerHTML;
+            var TimeStampField = document.getElementById('TimestampField').innerHTML;
+
+            // Parse Reply Email Attributes
+            SubjectField = AddReplyHeaderToSubject(SubjectField);
+            BodyField = PrepareEmailReplyBody(TimeStampField, ToField, BodyField);
+
+            // Paste Values into Reply
+            document.getElementById('compose-recipients').value = ToField;
+            document.getElementById('compose-subject').value = SubjectField;
+            document.getElementById('compose-body').value = BodyField;
+        }
+
+        function AddReplyHeaderToSubject(subject){
+            subject = subject.toString();
+
+            if(subject.includes("Re: "))
+                return subject;
+            else
+                return `Re: ${subject}`;
+        }
+
+        function PrepareEmailReplyBody(TimeStampField, Sender, BodyField){
+            return `\n\nOn ${TimeStampField} "${Sender}" wrote:\n${BodyField}`
+        }
+
+        function reply_email() {
+            // Show compose view and hide other views
+            document.querySelector('#emails-view').style.display = 'none';
+            document.querySelector('#compose-view').style.display = 'block';
+
+
+            // Clear out composition fields
+            document.querySelector('#compose-recipients').value = '';
+            document.querySelector('#compose-subject').value = '';
+            document.querySelector('#compose-body').value = '';
+        }
+
+        function CreateMailElement(id, emailName, subject, dateTime , readStatus, FromSentBox){
+            const datetime = CreateParagaraphElement(dateTime);
+            const element = document.createElement('div');
+
+            element.innerHTML = `<b>${emailName}</b> &nbsp <span class="MailSubject">${subject} </span>`;
+            element.className = readStatus ? `Read`:'Mail';
+            element.id = id;
+
+            element.addEventListener('click', () => {
+                                                        OpenEmail(id, FromSentBox);
+                                                    });
+
+            element.append(datetime);
+            document.querySelector('#emails-view').append(element);
+        }
+
+        function CreateParagaraphElement(innerHTML){
+            const element = document.createElement("p");
+            element.innerHTML = `${innerHTML}`;
+            element.className = 'dateTime';
+            return element;
+        }
+
+        function showEmailBox(){
+            document.querySelector('#emails-view').style.display = 'block';
+            document.querySelector('#compose-view').style.display = 'none';
+            document.querySelector('#display-view').style.display = 'none';
+        }
+
+        function OpenEmail(Email_ID, FromSentBox){ // based on ID check if archived or Not and display button accordingly
+            ShowViewEmail();
+            if(FromSentBox == undefined) FromSentBox=false;
+            fetch('/emails/' + Email_ID)
+            .then(response => response.json())
+            .then(email => {
+                                // Take email content out for View
+                                document.getElementById("fromField").innerHTML= email.sender;
+                                document.getElementById("ToField").innerHTML= email.recipients;
+                                document.getElementById("SubjectField").innerHTML= email.subject;
+                                document.getElementById("TimestampField").innerHTML= email.timestamp;
+                                document.getElementById("emailBodyField").innerHTML = email.body;
+                                document.getElementById("Email_ID").innerHTML = email.id;
+                                // Update email as "read"
+                                MarkEmailAsRead(Email_ID, "read", true);
+
+                                if(email.archived == false && FromSentBox == false)
+                                    ShowArchiveBtn();
+                                else if(email.archived == true && FromSentBox == false)
+                                    ShowUnarchiveBtn();
+                                else if(FromSentBox == true)
+                                    HideAllArchiveBtn();
+                                    
+                            });
+        }
+
+        function ShowViewEmail(){
+            document.querySelector('#emails-view').style.display = 'none';
+            document.querySelector('#compose-view').style.display = 'none';
+            document.querySelector('#display-view').style.display = 'block';
+        }
+
+        function HideViewEmail(){
+            document.querySelector('#display-view').style.display = 'none';
+        }
+
+        function ShowArchiveBtn(){
+            document.querySelector('#archiveBtn').style.display = 'block';
+            document.querySelector('#unarchiveBtn').style.display = 'none';
+        }
+
+        function ShowUnarchiveBtn(){
+            document.querySelector('#archiveBtn').style.display = 'none';
+            document.querySelector('#unarchiveBtn').style.display = 'block';
+        }
+
+        function HideAllArchiveBtn(){
+            document.querySelector('#archiveBtn').style.display = 'none';
+            document.querySelector('#unarchiveBtn').style.display = 'none';
+        }
+
+        /* API HANDLER BEYOND THIS POINT */
+
+        function GetSentMail(){
+            // Grab Sent Mail from Server
+            fetch('/emails/sent')
+            .then(response => response.json())
+            .then(emails => {
+                              // Grab Current User Email
+                                var CurrUser = document.querySelector("#CurrentAcct").value;
+
+                                // Filter email list by Curr User
+                                var EmailToKeep = FilterMailBySender(emails, CurrUser);
+                                EmailToKeep.forEach(email => {CreateMailElement(email.id, `${email.sender}`,`${email.subject}`, `${email.timestamp}`, email.read, true )});
+
+                                return EmailToKeep;
+                            });
+        }
+
+        function FilterMailBySender(jsonObj, CurrUser){
+            var EmailToKeep = [];
+            jsonObj.forEach(obj => {
+                                    if(obj.sender == CurrUser)
+                                        EmailToKeep.push(obj);
+                                    }
+                            );
+            return EmailToKeep;
+        }
+
+        function GetInboxMail(){
+            // Grab Sent Mail from Server
+            fetch('/emails/inbox')
+            .then(response => response.json())
+            .then(emails => {
+                                // Grab Current User Email
+                                var CurrUser = document.querySelector("#CurrentAcct").value;
+                                // Filter email list by Curr User
+                                var EmailToKeep = FilterMailByRecipients(emails, CurrUser);
+                                EmailToKeep = FilterMailByArchiveStatusFalse(EmailToKeep, CurrUser);
+                                EmailToKeep.forEach(email => {CreateMailElement(email.id, `${email.sender}`,`${email.subject}`, `${email.timestamp}`, email.read )});
+                                return EmailToKeep;
+                            });
+        }
+
+        function FilterMailByRecipients(jsonObj, CurrUser){
+            var EmailToKeep = [];
+            jsonObj.forEach(obj => {
+                                    var recipientsList = obj.recipients
+                                    recipientsList.forEach(email => {
+                                                                        if(email == CurrUser)
+                                                                            EmailToKeep.push(obj);
+                                                                    })
+                                    }
+                            );
+            return EmailToKeep;
+        }
+
+        function GetarchivedMail(){
+            // Grab Sent Mail from Server
+            fetch('/emails/archive')
+            .then(response => response.json())
+            .then(emails => {
+                                // Grab Current User Email
+                                var CurrUser = document.querySelector("#CurrentAcct").value;
+
+                                // Filter email list by Curr User
+                                var EmailToKeep = FilterMailByRecipients(emails, CurrUser);
+                                EmailToKeep.forEach(email => {CreateMailElement(email.id, `${email.sender}`,`${email.subject}`, `${email.timestamp}`, email.read )});
+                                return EmailToKeep;
+                            });
+        }
+
+        function FilterMailByArchiveStatusFalse(jsonObj, CurrUser){
+            var EmailToKeep = [];
+            jsonObj.forEach(obj => {
+                                    if(obj.archived == false )
+                                        EmailToKeep.push(obj);
+                                    }
+                            );
+            return EmailToKeep;
+        }
+
+        function MarkEmailAsRead(Email_ID){
+            fetch('/emails/'+ Email_ID, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ read: true })
+                                 })
+        }
+
+        function MarkEmailAsArchived(Email_ID){
+            fetch('/emails/'+ Email_ID, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ archived: true })
+                                 })
+        }
+
+        function MarkEmailAsUnarchived(Email_ID){
+            fetch('/emails/'+ Email_ID, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ archived: false })
+                                 })
+        }
+
+    </script>
+{% endblock %}
+
+{% block script %}
+{% endblock %}
